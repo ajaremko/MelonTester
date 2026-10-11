@@ -2,33 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## First-Time Setup
-
-If the values below still say "Pamplejuce" or "Pamplejuce Demo", this project was freshly created from the template and hasn't been personalized yet. Ask the user:
-
-1. **What's your plugin called?** (display name for DAWs, e.g. "Super Synth")
-2. **What's your company name?** (e.g. "My Audio Co")
-3. **What type of plugin is this?** (synth, effect, utility, etc.)
-4. **What IDE do you use?** (CLion, VS Code, Xcode, other)
-5. **Do you want CI/CD via GitHub Actions?** Note: public repos get unlimited CI minutes, but private repos have a limited monthly allowance. If they're on a private repo and want to avoid burning minutes during active development, suggest commenting out matrix entries in the workflow to build on just one platform (e.g. only their dev OS) and running tests only — they can re-enable the full matrix when preparing a release.
-6. **If using CI, do you need Intel IPP?** (provides SIMD-optimized DSP functions — if not, comment out the IPP install steps in the workflow to avoid CI failures)
-7. **Are you code signing?** Code signing is essentially required to distribute to anyone (beta testers, friends, customers) — without it, macOS Gatekeeper and Windows SmartScreen will block or warn on the plugin. But it can be set up later; it's fine to skip during early development. Ask separately for macOS and Windows:
-   - **macOS**: codesigning + notarization requires an Apple Developer account ($99/year). If not signing yet, comment out the codesign/notarize steps in the CI workflow. Guide: [How to code sign and notarize macOS audio plugins in CI](https://melatonin.dev/blog/how-to-code-sign-and-notarize-macos-audio-plugins-in-ci/)
-   - **Windows**: Azure Trusted Signing is the recommended approach (free tier available). If not signing yet, comment out the Azure signing step. Guide: [Code signing on Windows with Azure Trusted Signing](https://melatonin.dev/blog/code-signing-on-windows-with-azure-trusted-signing/)
-
-Then:
-- Update `CMakeLists.txt`: set `PROJECT_NAME` (no spaces), `PRODUCT_NAME` (display name), `COMPANY_NAME`, `BUNDLE_ID`, `PLUGIN_MANUFACTURER_CODE` (4 chars), and `PLUGIN_CODE` (4 chars)
-- Let the user know: builds default to **Debug** mode for development (faster builds, better debugging). If they're making music with the plugin and experiencing performance issues (audio dropouts, high CPU), they should ask to build in **Release** mode instead.
-- Rewrite the **Build Commands** section below to match their IDE:
-  - **CLion**: use `cmake-build-debug` / `cmake-build-release` as build directories (CLion's defaults — sharing them avoids duplicate builds). Use `-G Ninja` with CLion's bundled ninja so the `.ninja_log` format stays compatible between CLI and IDE builds.
-  - **VS Code**: use `build` or `Builds` as the build directory. Recommend Ninja + the CMake Tools extension.
-  - **Xcode**: use `-G Xcode` and open the generated `.xcodeproj`. CLI builds can use `Builds` with Ninja.
-- If they don't want CI right now, comment out the platforms in the matrix they don't need
-- If they don't need IPP, comment out the IPP install steps in the workflow
-- If they're not code signing on a platform, comment out the relevant signing/notarization steps in the workflow
-- Remove this setup section from CLAUDE.md once complete
-
 ## About This Project
+
+**MelonTester** is a synth / instrument plugin by Alfred Young. It takes MIDI in and has no audio input bus (`IS_SYNTH TRUE`, `NEEDS_MIDI_INPUT TRUE`).
 
 This project is derived from the [Pamplejuce](https://github.com/sudara/pamplejuce) template — a JUCE audio plugin template using CMake, C++23, and modern CI/CD. It builds cross-platform (macOS, Windows, Linux) with support for multiple plugin formats (VST3, AU, AUv3, CLAP, Standalone).
 
@@ -36,9 +12,18 @@ The template provides the build system, CI/CD, and project structure. The plugin
 
 ## Build Commands
 
-```bash
+Development happens in VS Code on Windows, using Ninja and the [CMake Tools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cmake-tools) extension. The build directory is `Builds` for both CLI and IDE builds (set `cmake.buildDirectory` to `${workspaceFolder}/Builds` in CMake Tools so they share it).
+
+Ninja needs the MSVC toolchain on the PATH. CMake Tools handles that when a Visual Studio kit is selected. From a plain terminal, load the developer environment first (Visual Studio Build Tools 2026 is installed):
+
+```powershell
+# Once per terminal session
+& "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64 -SkipAutomaticLocation
+```
+
+```powershell
 # Configure (run once, or after CMakeLists.txt changes)
-cmake -B Builds -DCMAKE_BUILD_TYPE=Debug
+cmake -B Builds -G Ninja -DCMAKE_BUILD_TYPE=Debug
 
 # Build
 cmake --build Builds --config Debug
@@ -47,25 +32,23 @@ cmake --build Builds --config Debug
 ctest --test-dir Builds --verbose --output-on-failure
 
 # Or run tests directly
-./Builds/Tests
+./Builds/Tests.exe
 
 # Run a single test by name
-./Builds/Tests "[test name]"
+./Builds/Tests.exe "[test name]"
 
 # Run benchmarks
-./Builds/Benchmarks
+./Builds/Benchmarks.exe
 ```
 
-For faster builds, add Ninja: `cmake -B Builds -G Ninja -DCMAKE_BUILD_TYPE=Debug`
-
-On macOS for universal binary: `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`
+Builds default to **Debug** (faster builds, better debugging). If the user is making music with the plugin and reports audio dropouts or high CPU, build in Release instead: configure with `-DCMAKE_BUILD_TYPE=Release` and build with `--config Release`.
 
 ## Project Structure
 
 - `source/` - Plugin source code (PluginProcessor, PluginEditor)
 - `tests/` - Catch2 test files
 - `benchmarks/` - Catch2 benchmark files
-- `cmake/` - CMake modules (Tests.cmake, Benchmarks.cmake, Assets.cmake, etc.)
+- `cmake/` - CMake modules (Tests.cmake, Benchmarks.cmake, Assets.cmake, etc.). This is a git submodule, so avoid editing files in it.
 - `modules/` - Git submodules: clap-juce-extensions, melatonin_inspector
 - `JUCE/` - JUCE framework (git submodule)
 - `assets/` - Binary resources (auto-included via juce_add_binary_data)
@@ -78,7 +61,7 @@ On macOS for universal binary: `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`
 **CMake Modules**:
 - `PamplejuceVersion.cmake` - Reads VERSION file, optional auto-bump patch level
 - `PamplejuceFunctions.cmake` - One include that defines the `pamplejuce_*` functions below (and turns off their legacy include-time behavior)
-- `PamplejuceIPP.cmake` - Intel IPP integration (optional)
+- `PamplejuceIPP.cmake` - Intel IPP integration (optional, currently disabled: its `include` is commented out in `CMakeLists.txt`)
 
 Target setup happens via explicit function calls in `CMakeLists.txt`, not at include time:
 - `pamplejuce_add_assets()` - Includes all files in assets/ as binary data (from `Assets.cmake`)
@@ -93,15 +76,29 @@ Note: after `include(PamplejuceFunctions)`, a plain `include(Tests)` (or Assets,
 
 ## Key Configuration
 
-Edit `CMakeLists.txt` to customize:
-- `PROJECT_NAME` - Internal name (no spaces)
-- `PRODUCT_NAME` - Display name in DAWs (can have spaces)
-- `COMPANY_NAME` - Used for bundle name
-- `BUNDLE_ID` - macOS bundle identifier
-- `FORMATS` - Plugin formats to build (Standalone AU VST3 AUv3)
-- `PLUGIN_MANUFACTURER_CODE` / `PLUGIN_CODE` - 4-character plugin IDs
+Set in `CMakeLists.txt`:
+- `PROJECT_NAME` - Internal name (no spaces): `MelonTester`
+- `PRODUCT_NAME` - Display name in DAWs (can have spaces): `MelonTester`
+- `COMPANY_NAME` - Used for bundle name: `Alfred Young`
+- `BUNDLE_ID` - macOS bundle identifier and CLAP ID: `com.alfredyoung.melontester`
+- `FORMATS` - Plugin formats to build: `Standalone AU VST3 AUv3` (CLAP is added via clap-juce-extensions)
+- `PLUGIN_MANUFACTURER_CODE` / `PLUGIN_CODE` - 4-character plugin IDs: `Alfr` / `Mlnt`. Changing these after release breaks existing user sessions.
+- `IS_SYNTH TRUE`, `NEEDS_MIDI_INPUT TRUE`, `CLAP_FEATURES instrument synthesizer` - instrument configuration
+
+The plugin name is also asserted in `tests/PluginBasics.cpp` and used in `packaging/dmg.json`; update both if it changes.
 
 Version is read from the `VERSION` file in project root.
+
+## CI Status
+
+`.github/workflows/build_and_test.yml` runs the full matrix (Linux, macOS, Windows) on every push and pull request, in Release mode, including pluginval.
+
+Currently disabled, as commented-out blocks in the workflow:
+- **Intel IPP**: the install steps and the `IPP_DIR` env var. Re-enable together with `include(PamplejuceIPP)` in `CMakeLists.txt`.
+- **macOS code signing and notarization**: the installer `.pkg` is built unsigned. Needs an Apple Developer account. Guide: [How to code sign and notarize macOS audio plugins in CI](https://melatonin.dev/blog/how-to-code-sign-and-notarize-macos-audio-plugins-in-ci/)
+- **Windows code signing**: the installer `.exe` is built unsigned. Guide: [Code signing on Windows with Azure Trusted Signing](https://melatonin.dev/blog/code-signing-on-windows-with-azure-trusted-signing/)
+
+Signing is needed before distributing to anyone, since Gatekeeper and SmartScreen block or warn on unsigned plugins.
 
 ## Code Quality
 
