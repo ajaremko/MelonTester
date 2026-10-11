@@ -1,57 +1,101 @@
-![PAMPLEJUCE](assets/images/pamplejuce.png)
-[![](https://github.com/sudara/pamplejuce/actions/workflows/build_and_test.yml/badge.svg)](https://github.com/sudara/pamplejuce/actions)
+# MelonTester
 
-Pamplejuce is a ~~template~~ lifestyle for creating and building JUCE plugins in 2026.
+MelonTester is a 16-pad sampler plugin for chopping a long sample across the pads, MPC style, without leaving your pad controller. Load one sample, hit a pad, and turn a knob to move where that pad starts and ends.
 
-Out-of-the-box, it:
+Most samplers let you trigger slices from hardware but make you reach for the mouse to decide what each pad actually plays. MelonTester exposes each pad's playback region to MIDI, so the whole chopping workflow can be done from the controller. It is designed around a Native Instruments Maschine in MIDI mode, and should work with any controller that has 16 pads and endless encoders.
 
-1. Runs C++23
-2. Uses JUCE 9.x as a git submodule (tracking develop).
-3. Uses CPM for dependency management.
-3. Relies on CMake 3.25 and higher for cross-platform building.
-4. Has [Catch2](https://github.com/catchorg/Catch2) v3.8.1 for the test framework and runner.
-5. Includes a `Tests` target and a `Benchmarks` target with examples to get started quickly.
-6. Has [Melatonin Inspector](https://github.com/sudara/melatonin_inspector) installed as a JUCE module to help relieve headaches when building plugin UI.
+## Status
 
-It also has integration with GitHub Actions, specifically:
+Early development. **Nothing described below is implemented yet.** The plugin currently builds as an empty instrument; this document describes the intended design.
 
-1. Building and testing cross-platform (linux, macOS, Windows) binaries
-2. Running tests and benchmarks in CI
-3. Running [pluginval](http://github.com/tracktion/pluginval) 1.x against the binaries for plugin validation
-4. Config for [installing Intel IPP](https://www.intel.com/content/www/us/en/developer/tools/oneapi/ipp.html)
-5. [Code signing and notarization on macOS](https://melatonin.dev/blog/how-to-code-sign-and-notarize-macos-audio-plugins-in-ci/)
-6. [Windows code signing via Azure Trusted Signing](https://melatonin.dev/blog/code-signing-on-windows-with-azure-trusted-signing/)
+## How it works
 
-It also contains:
+1. Load one long audio file: a break, a loop, a whole track.
+2. Each of the 16 pads plays its own region of that file.
+3. Hit a pad. It plays, and it becomes the pad you are editing.
+4. Turn the start and end encoders to move that pad's region. Hit the pad again to hear the result.
+5. Repeat across the pads until the sample is chopped the way you want it.
 
-1. A `.gitignore` for all platforms.
-2. A `.clang-format` file for keeping code tidy.
-3. A `VERSION` file that will propagate through JUCE and your app.
-4. A ton of useful comments and options around the CMake config.
+To get a starting point quickly, the sample can be split into 16 equal slices or sliced at detected transients, then adjusted pad by pad.
 
-## How does this all work at a high level?
+## Planned features
 
-Check out the [official Pamplejuce documentation](https://melatonin.dev/manuals/pamplejuce/how-does-this-all-work/).
+### Chopping
 
-[![Arc - 2024-10-01 51@2x](https://github.com/user-attachments/assets/01d19d2d-fbac-481f-8cec-e9325b2abe57)](https://melatonin.dev/manuals/pamplejuce/how-does-this-all-work/)
+- **Manual start and end per pad**, anywhere in the sample. Regions can overlap.
+- **Equal divisions**: split the sample into 16 equal slices in one action.
+- **Transient detection**: place slices on detected hits, with a sensitivity control.
 
-## Setting up for YOUR project
+### Per-pad playback
 
-This is a template repo!
+- **One-shot or gate**: play the whole slice, or only while the pad is held.
+- **Choke or poly**: a new pad cuts the previous one, or pads ring over each other.
+- **Pitch** and **gain**.
+- **Attack and release** to remove clicks at slice edges.
+- **Reverse** and **loop**.
 
-That means you can click "[Use this template](https://github.com/sudara/pamplejuce/generate)" here or at the top of the page to get your own copy (not fork) of the repo. Then you can make it private or keep it public, up to you.
+### Editor
 
-Then check out the [documentation](https://melatonin.dev/manuals/pamplejuce/setting-your-project-up/) so you know what to tweak.
+- Waveform view showing all 16 regions, plus a pad grid.
+- Everything that can be done from the controller can also be done with the mouse.
+- Load a sample by drag and drop or from a file dialog.
 
-**Using an AI coding agent?** The included `CLAUDE.md` / `AGENTS.md` has a first-time setup wizard — just ask your agent to set up the project and it will walk you through naming, CI configuration, and code signing.
+## MIDI control
 
-> [!NOTE]
-> Tests will immediately run and fail (go red) until you [set up code signing](https://melatonin.dev/manuals/pamplejuce/getting-started/code-signing/).
+Pads are played with MIDI notes. Editing uses relative (endless encoder) CCs that always act on the **last pad you hit**, so one small set of controls covers all 16 pads.
 
-## Having Issues?
+| Control | Type | Acts on |
+|---|---|---|
+| Pads 1–16 | 16 notes | Plays the pad and selects it for editing |
+| Slice start | Relative CC | Selected pad |
+| Slice end | Relative CC | Selected pad |
+| Pitch | Relative CC | Selected pad |
+| Gain | Relative CC | Selected pad |
+| Attack / release | Relative CC | Selected pad |
+| One-shot / gate | Button | Selected pad |
+| Reverse | Button | Selected pad |
+| Loop | Button | Selected pad |
+| Choke / poly | Button | All pads |
+| Divide equally | Button | Whole sample |
+| Detect transients | Button | Whole sample |
+| Transient sensitivity | Relative CC | Whole sample |
 
-Thanks to everyone who has contributed to the repository. 
+Note and CC numbers have not been assigned yet.
 
-This repository covers a _lot_ of ground. JUCE itself has a lot of surface area. It's a group effort to maintain the garden and keep things nice!
+## Controller feedback
 
-If something isn't just working out of the box — *it's probably not just you* — others are running into the problem, too, I promise. Check out [the official docs](https://melatonin.dev/manuals/pamplejuce), then please do [open an issue](https://github.com/sudara/pamplejuce/issues/new)!
+The plugin publishes its state as host parameters so it can be shown outside the plugin window: which pad is selected, that pad's start and end positions, and its playback settings. When you hit a different pad, those parameters update to describe the new pad.
+
+## Using it with Maschine
+
+MelonTester is intended to be used with a Maschine controller in **MIDI mode**, with the plugin loaded in any DAW. A Controller Editor template will be provided with the project, mapping the pads to notes and the eight knobs to relative encoders for the controls above.
+
+## Open questions
+
+- **Display feedback in MIDI mode.** In MIDI mode the Maschine displays show values from the template's own CCs, not host parameters. Keeping the knob readouts in sync with the selected pad may also need the plugin to send CC values over MIDI out. To be tested on hardware.
+- **Encoder behaviour.** Which relative CC encoding to support, and how coarse and fine adjustment should work when a sample is minutes long.
+- **Snap to zero crossings** when moving slice points.
+- **Pad banks**, for more than 16 slices of one sample.
+- **Time-stretching**, so pitch and length can be changed independently.
+- **Session storage.** Whether a saved project stores a path to the sample or embeds the audio.
+
+## Building
+
+Requires CMake 3.25 or newer and a C++23 compiler. Ninja is recommended.
+
+```bash
+git clone --recurse-submodules <repo-url>
+cd MelonTester
+
+cmake -B Builds -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build Builds --config Debug
+ctest --test-dir Builds --verbose --output-on-failure
+```
+
+On Windows, run these from a Visual Studio developer shell so the MSVC toolchain is on the path.
+
+The build produces VST3, CLAP and Standalone versions, plus AU and AUv3 on macOS. Use `-DCMAKE_BUILD_TYPE=Release` and `--config Release` for a build to make music with.
+
+## Credits
+
+Built with [JUCE](https://juce.com/) on the [Pamplejuce](https://github.com/sudara/pamplejuce) template.
