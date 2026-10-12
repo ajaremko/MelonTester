@@ -119,6 +119,9 @@ pamplejuce_shared_code_defaults()
 file(GLOB_RECURSE SourceFiles CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/source/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/source/*.h")
 target_sources(SharedCode INTERFACE ${SourceFiles})
 
+# Lets source files include each other relative to source/, e.g. "params/ParamIDs.h"
+target_include_directories(SharedCode INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/source")
+
 # Adds a BinaryData target for embedding assets into the binary
 pamplejuce_add_assets()
 

@@ -1,16 +1,20 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "params/ParameterLayout.h"
+
+namespace
+{
+    const juce::Identifier samplePathProperty { "samplePath" };
+}
 
 //==============================================================================
 PluginProcessor::PluginProcessor()
-     : AudioProcessor (BusesProperties()
-                     #if ! JucePlugin_IsMidiEffect
-                      #if ! JucePlugin_IsSynth
-                       .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                      #endif
-                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
-                     #endif
-                       )
+    : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+      apvts (*this, nullptr, "MelonTester", createParameterLayout()),
+      params (apvts),
+      router (MidiMap::load()),
+      engine (params, sampleStore),
+      controller (apvts, params, sampleStore, editQueue)
 {
 }
 
@@ -87,75 +91,84 @@ void PluginProcessor::changeProgramName (int index, const juce::String& newName)
 //==============================================================================
 void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
-    juce::ignoreUnused (sampleRate, samplesPerBlock);
+    juce::ignoreUnused (samplesPerBlock);
+    engine.prepare (sampleRate);
 }
 
 void PluginProcessor::releaseResources()
 {
-    // When playback stops, you can use this as an opportunity to free up any
-    // spare memory, etc.
 }
 
 bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-  #if JucePlugin_IsMidiEffect
-    juce::ignoreUnused (layouts);
-    return true;
-  #else
-    // This is the place where you check if the layout is supported.
-    // In this template code we only support mono or stereo.
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
-        return false;
-
-    // This checks if the input layout matches the output layout
-   #if ! JucePlugin_IsSynth
-    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
-        return false;
-   #endif
-
-    return true;
-  #endif
+    return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::mono()
+        || layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
 }
 
 void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                                               juce::MidiBuffer& midiMessages)
 {
-    juce::ignoreUnused (midiMessages);
-
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels  = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // In case we have more outputs than inputs, this code clears any output
-    // channels that didn't contain input data, (because these aren't
-    // guaranteed to be empty - they may contain garbage).
-    // This is here to avoid people getting screaming feedback
-    // when they first compile a plugin, but obviously you don't need to keep
-    // this code if your algorithm always overwrites all the output channels.
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
+    const auto numSamples = buffer.getNumSamples();
+    buffer.clear();
 
-    // This is the place where you'd normally do the guts of your plugin's
-    // audio processing...
-    // Make sure to reset the state if your inner loop is processing
-    // the samples and the outer loop is handling the channels.
-    // Alternatively, you can process the samples with the channels
-    // interleaved by keeping the same state.
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
+    engine.beginBlock();
+    auditionQueue.drain ([this] (const EditCommand& command) { handleAudition (command); });
+
+    // Render up to each MIDI message before acting on it, so pad hits start on the right sample
+    int position = 0;
+
+    for (const auto metadata : midiMessages)
     {
-        auto* channelData = buffer.getWritePointer (channel);
-        juce::ignoreUnused (channelData);
-        // ..do something to the data...
+        const auto eventPosition = juce::jlimit (position, numSamples, metadata.samplePosition);
+
+        engine.render (buffer, position, eventPosition - position);
+        position = eventPosition;
+
+        handleMidiEvent (router.route (metadata.getMessage()));
     }
+
+    engine.render (buffer, position, numSamples - position);
+}
+
+void PluginProcessor::handleMidiEvent (const RoutedEvent& event)
+{
+    switch (event.kind)
+    {
+        case RoutedEvent::Kind::padOn:
+            engine.triggerPad (event.pad, event.velocity);
+            editQueue.push (EditCommand::forPad (EditCommand::Type::selectPad, event.pad));
+            break;
+        case RoutedEvent::Kind::padOff:
+            engine.releasePad (event.pad);
+            break;
+        case RoutedEvent::Kind::edit:
+            editQueue.push (event.command);
+            break;
+        case RoutedEvent::Kind::none:
+            break;
+    }
+}
+
+void PluginProcessor::handleAudition (const EditCommand& command)
+{
+    if (command.type == EditCommand::Type::padOn)
+        engine.triggerPad (command.pad, command.value);
+    else if (command.type == EditCommand::Type::padOff)
+        engine.releasePad (command.pad);
+}
+
+void PluginProcessor::auditionPad (int padIndex, bool isDown)
+{
+    const auto type = isDown ? EditCommand::Type::padOn : EditCommand::Type::padOff;
+    auditionQueue.push (EditCommand::forPad (type, padIndex, 1.0f));
 }
 
 //==============================================================================
 bool PluginProcessor::hasEditor() const
 {
-    return true; // (change this to false if you choose to not supply an editor)
+    return true;
 }
 
 juce::AudioProcessorEditor* PluginProcessor::createEditor()
@@ -166,17 +179,36 @@ juce::AudioProcessorEditor* PluginProcessor::createEditor()
 //==============================================================================
 void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // You should use this method to store your parameters in the memory block.
-    // You could do that either as raw data, or use the XML or ValueTree classes
-    // as intermediaries to make it easy to save and load complex data.
-    juce::ignoreUnused (destData);
+    auto state = apvts.copyState();
+    state.setProperty (samplePathProperty, sampleStore.getFile().getFullPathName(), nullptr);
+
+    if (const auto xml = state.createXml())
+        copyXmlToBinary (*xml, destData);
 }
 
 void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
-    juce::ignoreUnused (data, sizeInBytes);
+    const auto xml = getXmlFromBinary (data, sizeInBytes);
+
+    if (xml == nullptr || ! xml->hasTagName (apvts.state.getType()))
+        return;
+
+    const auto state = juce::ValueTree::fromXml (*xml);
+    const auto samplePath = state.getProperty (samplePathProperty).toString();
+
+    apvts.replaceState (state);
+
+    // The pad regions come back with the parameters, so the sample is loaded without re-slicing
+    if (! juce::File::isAbsolutePath (samplePath))
+    {
+        sampleStore.clear();
+        return;
+    }
+
+    const juce::File sampleFile (samplePath);
+
+    if (! sampleStore.loadFile (sampleFile))
+        sampleStore.setMissing (sampleFile);
 }
 
 //==============================================================================

@@ -1,10 +1,12 @@
 #pragma once
 
+#include "control/Commands.h"
+#include "control/EditController.h"
+#include "engine/SamplerEngine.h"
+#include "midi/MidiRouter.h"
+#include "params/PadParams.h"
+#include "sample/SampleStore.h"
 #include <juce_audio_processors/juce_audio_processors.h>
-
-#if (MSVC)
-#include "ipps.h"
-#endif
 
 class PluginProcessor : public juce::AudioProcessor
 {
@@ -38,6 +40,31 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    //==============================================================================
+    juce::AudioProcessorValueTreeState& getValueTreeState() { return apvts; }
+    const ParamRefs& getParams() const { return params; }
+    SampleStore& getSampleStore() { return sampleStore; }
+    EditController& getController() { return controller; }
+    const SamplerEngine& getEngine() const { return engine; }
+    const MidiMap& getMidiMap() const { return router.getMap(); }
+
+    // Plays a pad from the editor. Message thread.
+    void auditionPad (int padIndex, bool isDown);
+
 private:
+    void handleMidiEvent (const RoutedEvent& event);
+    void handleAudition (const EditCommand& command);
+
+    juce::AudioProcessorValueTreeState apvts;
+    ParamRefs params;
+    SampleStore sampleStore;
+
+    CommandQueue editQueue; // audio thread -> message thread
+    CommandQueue auditionQueue; // message thread -> audio thread
+
+    MidiRouter router;
+    SamplerEngine engine;
+    EditController controller;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };

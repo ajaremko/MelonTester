@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## About This Project
 
-**MelonTester** is a synth / instrument plugin by Alfred Young. It takes MIDI in and has no audio input bus (`IS_SYNTH TRUE`, `NEEDS_MIDI_INPUT TRUE`).
+**MelonTester** is a 16-pad chop sampler plugin by Alfred Young, built to be driven from a Maschine controller in MIDI mode: one long sample, each pad plays a region of it, and each pad's region is editable from MIDI encoders. `README.md` is the design document, including what is and isn't implemented yet. It takes MIDI in and has no audio input bus (`IS_SYNTH TRUE`, `NEEDS_MIDI_INPUT TRUE`).
 
 This project is derived from the [Pamplejuce](https://github.com/sudara/pamplejuce) template — a JUCE audio plugin template using CMake, C++23, and modern CI/CD. It builds cross-platform (macOS, Windows, Linux) with support for multiple plugin formats (VST3, AU, AUv3, CLAP, Standalone).
 
@@ -45,8 +45,17 @@ Builds default to **Debug** (faster builds, better debugging). If the user is ma
 
 ## Project Structure
 
-- `source/` - Plugin source code (PluginProcessor, PluginEditor)
-- `tests/` - Catch2 test files
+- `source/` - Plugin source code. Files include each other relative to `source/`, e.g. `"params/ParamIDs.h"`.
+  - `PluginProcessor` - owns every module below and wires them together
+  - `PluginEditor` - lays out the four panels in `ui/`
+  - `params/` - parameter IDs and layout, cached atomic pointers (`ParamRefs`), the selected-pad mirror
+  - `sample/` - the loaded sample (`SampleData`) and its hand-off to the audio thread (`SampleStore`)
+  - `engine/` - playback: one `PadVoice` per pad, driven by `SamplerEngine`
+  - `midi/` - `MidiMap` (JSON-defined note/CC assignments) and `MidiRouter` (MIDI message to pad hit or edit command)
+  - `control/` - `EditCommand` + `CommandQueue`, and `EditController`, which applies all edits
+  - `slicing/` - `Slicer`: equal division and transient detection as plain functions
+  - `ui/` - `GlobalPanel`, `WaveformPanel`, `PadGrid`, `PadParamsPanel`, and the parameter-bound controls in `ParamControls.h`
+- `tests/` - Catch2 test files. `tests/helpers/sampler_helpers.h` has helpers for driving the plugin with MIDI.
 - `benchmarks/` - Catch2 benchmark files
 - `cmake/` - CMake modules (Tests.cmake, Benchmarks.cmake, Assets.cmake, etc.). This is a git submodule, so avoid editing files in it.
 - `modules/` - Git submodules: clap-juce-extensions, melatonin_inspector
@@ -54,7 +63,20 @@ Builds default to **Debug** (faster builds, better debugging). If the user is ma
 - `assets/` - Binary resources (auto-included via juce_add_binary_data)
 - `packaging/` - Installer resources and scripts
 
-## Architecture
+## Plugin Architecture
+
+State is shared between the two threads; only the message thread changes it.
+
+- **Parameters** (`juce::AudioProcessorValueTreeState`): global settings, 12 settings for each of the 16 pads, and a 12-parameter "selected pad" mirror set (`sel_*`). `SelectedPadMirror` keeps the mirror set equal to the selected pad's own parameters in both directions. The UI and the controller bind to the mirror set. Parameter IDs are saved in user projects, so never rename them. Pad indices are zero-based in code and 1-based in IDs and the `selectedPad` parameter.
+- **Sample**: `SampleData` is immutable once loaded. `SampleStore` swaps a new one in for the audio thread at a block boundary and frees the old one on the message thread. The file path is saved in the APVTS state tree (`samplePath`).
+- **Audio thread** (`processBlock`): `MidiRouter` translates each MIDI message. Pad hits go straight to `SamplerEngine` so they are sample-accurate. Everything that changes state (selecting a pad, encoder turns, buttons) is pushed onto a `CommandQueue` as an `EditCommand`.
+- **Message thread**: `EditController` drains that queue on a 60 Hz timer, applies the edits to parameters, and syncs the mirror. The editor calls the same `EditController` functions directly, so MIDI and mouse edits share one path. Add new edit behaviour there, not in UI components or the audio thread.
+- In tests no timer runs, so call `getController().processPending()` after `processBlock` to apply queued edits.
+- The MIDI map is JSON: the default is embedded from `assets/midi/default_map.json`, and a user file at `<user app data>/MelonTester/midi_map.json` overrides it. It is read once when the plugin is created.
+
+Stubs to fill in: `SamplerEngine` ignores pitch, attack/release, play mode, reverse, loop, choke group and polyphony mode; `Slicer::detectTransients` returns nothing; pad colour is not drawn.
+
+## Build Architecture
 
 **SharedCode Library**: The `SharedCode` INTERFACE library links plugin source code to both the main plugin target and the Tests target, avoiding ODR violations.
 

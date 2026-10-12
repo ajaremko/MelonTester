@@ -1,0 +1,24 @@
+{
+    "version": 1,
+    "channel": 0,
+    "relativeEncoding": "twosComplement",
+    "padNotes": [36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51],
+    "controls": [
+        { "cc": 14, "target": "zoom", "mode": "relative" },
+        { "cc": 15, "target": "viewX", "mode": "relative" },
+        { "cc": 16, "target": "start", "mode": "relative" },
+        { "cc": 17, "target": "end", "mode": "relative" },
+        { "cc": 18, "target": "pitch", "mode": "relative" },
+        { "cc": 19, "target": "gain", "mode": "relative" },
+        { "cc": 20, "target": "attack", "mode": "relative" },
+        { "cc": 21, "target": "release", "mode": "relative" },
+        { "cc": 22, "target": "playMode", "mode": "toggle" },
+        { "cc": 23, "target": "reverse", "mode": "toggle" },
+        { "cc": 24, "target": "loop", "mode": "toggle" },
+        { "cc": 25, "target": "chokeGroup", "mode": "relative" },
+        { "cc": 26, "target": "polyMode", "mode": "toggle" },
+        { "cc": 27, "target": "sensitivity", "mode": "relative" },
+        { "cc": 28, "target": "divideEqually", "mode": "trigger" },
+        { "cc": 29, "target": "detectTransients", "mode": "trigger" }
+    ]
+}
