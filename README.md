@@ -2,7 +2,7 @@
 
 MelonTester is a 16-pad sampler plugin for chopping a long sample across the pads, MPC style, without leaving your pad controller. Load one sample, hit a pad, and turn a knob to move where that pad starts and ends.
 
-Most samplers let you trigger slices from hardware but make you reach for the mouse to decide what each pad actually plays. MelonTester exposes each pad's playback region to MIDI, so the whole chopping workflow can be done from the controller. It is designed around a Native Instruments Maschine in MIDI mode, and should work with any controller that has 16 pads and endless encoders.
+Most samplers let you trigger slices from hardware but make you reach for the mouse to decide what each pad actually plays. MelonTester exposes each pad's playback region as host parameters and MIDI controls, so the whole chopping workflow can be done from the controller. It is designed around a Native Instruments Maschine MK2 driven by a MIDI script in FL Studio, and should work with any controller that has 16 pads and endless encoders.
 
 ## Status
 
@@ -19,6 +19,8 @@ Working now:
 
 Not implemented yet: pitch, attack and release, gate mode, reverse, loop, choke groups and polyphony mode, transient detection, pad colours, and dragging region edges with the mouse. The controls and parameters for these exist but do nothing.
 
+Everything still to do, including planned features that have no controls yet, is listed in [TODO.md](TODO.md).
+
 ## How it works
 
 1. Load one long audio file: a break, a loop, a whole track.
@@ -33,28 +35,40 @@ To get a starting point quickly, the sample can be split into 16 equal slices or
 
 ### Chopping
 
-- **Manual start and end per pad**, anywhere in the sample. Regions can overlap.
+- **Manual start and end per pad**, anywhere in the sample. Regions can overlap, but a region can't be made shorter than a small minimum length.
+- **Coarse and fine movement**: a coarse step moves an edge by 1/512 of what the waveform shows and a fine step by 1/5120, so zooming in makes both finer.
+- **Snap to zero crossings**, on by default: coarse moves land on the nearest zero crossing, and fine moves place the edge exactly.
 - **Equal divisions**: split the sample into 16 equal slices in one action.
-- **Transient detection**: place slices on detected hits, with a sensitivity control. When more than 16 hits are found the 16 strongest are kept, assigned to the pads in time order. With fewer than 16, the remaining pads are left blank.
+- **Transient detection**: place slices on detected hits, with a sensitivity control. When more than 16 hits are found the 16 strongest are kept, assigned to the pads in time order. With fewer than 16, the remaining pads are left blank. Each slice runs until the next one starts.
 
 ### Per-pad playback
 
 - **One-shot or gate**: play the whole slice, or only while the pad is held.
 - **Choke groups**: a pad cuts any other pad playing in the same group.
 - **Polyphony mode** for the whole plugin: in Poly only choke groups cut pads; in Mono every new pad cuts whatever is playing.
-- **Pitch** and **gain**.
-- **Attack and release** to remove clicks at slice edges.
-- **Reverse** and **loop**.
+- **Velocity** sets the volume of each hit. A Full Level switch for the whole plugin makes every hit full volume.
+- **Pitch** and **gain**. Pitch is read when the pad is hit.
+- **Attack and release**: every region has a very short fade at both edges so slices never click. Attack lengthens the fade-in. Release applies when a gate pad is let go or a pad is cut.
+- **Reverse**.
+- **Loop**, for gate pads: the region repeats while the pad is held.
 
 ### Editor
 
-- Waveform view showing all 16 regions, plus a pad grid.
+- Waveform view showing all 16 regions in their pad colours, with the selected one emphasised, plus a pad grid.
+- **Pad colours** from a palette of 16. Pads without a slice are dark.
+- Start and end shown as time into the sample.
 - Everything that can be done from the controller can also be done with the mouse.
-- Load a sample by drag and drop or from a file dialog.
+- Load a sample by drag and drop or from a file dialog. Loading spreads the pads evenly across the new sample.
+- If a saved project's sample has moved, a Locate button reloads it and keeps the chops.
 
-## MIDI control
+Slice positions are stored as a fraction of the sample. They are exact to one sample up to about five minutes at 48 kHz, and within a few samples beyond that.
 
-Pads are played with MIDI notes. Editing uses relative (endless encoder) CCs that always act on the **last pad you hit**, so one small set of controls covers all 16 pads.
+## Control
+
+Pads are played with MIDI notes. Everything else can be reached in two ways, and both act on the **last pad you hit**, so one small set of controls covers all 16 pads.
+
+- **Host parameters.** Every setting is a parameter that a controller script running in the host can read and write. This is how the Maschine MK2 script works; see [Host parameters](#host-parameters).
+- **MIDI CCs.** A controller that sends relative (endless encoder) CCs can use the controls below, through the MIDI map.
 
 | Control | Type | Acts on |
 |---|---|---|
@@ -75,11 +89,11 @@ Pads are played with MIDI notes. Editing uses relative (endless encoder) CCs tha
 | Detect transients | Button | Whole sample |
 | Transient sensitivity | Relative CC | Whole sample |
 
-One step of the start or end encoder moves the edge by 1/512 of what the waveform view shows, so zooming in gives finer control.
+One step of the start or end encoder is a coarse step.
 
 ### MIDI map
 
-Note and CC assignments are read from a JSON file. The built-in map is [assets/midi/default_map.json](assets/midi/default_map.json): pads on notes 36–51, the controls above on CCs 14–29. These numbers are placeholders until the Maschine template exists.
+Note and CC assignments are read from a JSON file. The built-in map is [assets/midi/default_map.json](assets/midi/default_map.json): pads on notes 36–51, pad 1 lowest, which is what the MK2 script sends, and the controls above on CCs 14–29. The CC numbers are arbitrary defaults for other controllers.
 
 To use your own, copy that file to `MelonTester/midi_map.json` in your user application data folder (`%APPDATA%` on Windows, `~/Library` on macOS, `~/.config` on Linux) and edit it. It is read when the plugin loads; if it is missing or invalid the built-in map is used.
 
@@ -102,27 +116,38 @@ To use your own, copy that file to `MelonTester/midi_map.json` in your user appl
 - `target`: `start`, `end`, `pitch`, `gain`, `attack`, `release`, `playMode`, `reverse`, `loop`, `chokeGroup`, `colour`, `polyMode`, `zoom`, `viewX`, `sensitivity`, `divideEqually` or `detectTransients`.
 - `mode`: `relative` (endless encoder), `absolute` (0–127 knob or fader), `toggle` or `trigger` (buttons, acting on press).
 
-## Controller feedback
+## Host parameters
 
-The plugin publishes its state as host parameters so it can be shown outside the plugin window. Every pad has its own set of parameters, which can be automated. On top of that there is one "Selected" set that always shows the last pad you hit: its start and end positions and its playback settings. When you hit a different pad, the Selected parameters update to describe the new pad, and changing one of them changes that pad. Zoom, view position and the selected pad number are parameters too.
+The plugin publishes its state as host parameters so it can be shown and changed outside the plugin window. Every pad has its own set of parameters, which can be automated. On top of that there is one "Selected" set that always shows the last pad you hit: its start and end positions and its playback settings. When you hit a different pad, the Selected parameters update to describe the new pad, and changing one of them changes that pad. Zoom, view position and the selected pad number are parameters too.
+
+The parameters keep a fixed order, because controller scripts find them by position: 5 global parameters, then the 12 Selected parameters, then 12 for each pad. New parameters are only ever added at the end.
+
+The plugin does not send MIDI out. A controller shows the plugin's state by reading parameters.
 
 ## Using it with Maschine
 
-MelonTester is intended to be used with a Maschine controller in **MIDI mode**, with the plugin loaded in any DAW. A Controller Editor template will be provided with the project, mapping the pads to notes and the eight knobs to relative encoders for the controls above.
+MelonTester is built to be used in FL Studio with a Maschine MK2 and a MIDI script for it, which is a separate project. The script passes the pads on as notes and uses the plugin's parameters for everything else:
+
+- The eight knobs are Zoom, View, Start, End, Pitch, Gain, Attack and Release. The script's other eight knob assignments are kept for FL Studio's channel rack.
+- Holding a modifier turns two of the knobs into Choke group and Transient sensitivity.
+- The script switches the Start and End knobs between coarse and fine movement.
+- The display shows the Selected parameters as text.
+- The pads light in their pad colours, as described in [pad-colors.md](pad-colors.md).
+- Divide equally and Detect transients are done in the plugin window.
 
 ## Proposed UI
 
 The following is the proposed layout for the UI of the vst. It breaks down to 4 areas:
 
 ### Global params
-The user can select a polyphony mode here. Buttons to access the equal division and transient detection auto slicing features. These automatically assign slices to all of the 16 pads (or a portion of the pads for a sample with fewer than 16 slices found).
+The user can select a polyphony mode here, and switch Full Level and Zero Snap on and off. Buttons to access the equal division and transient detection auto slicing features. These automatically assign slices to all of the 16 pads (or a portion of the pads for a sample with fewer than 16 slices found).
 
 ### Waveform viewer/Selection editor
-Displays the waveform of the loaded sample. A sample can be dragged from the host DAW and dropped into this area to load a sample. It also displays the boundaries of the current pad's selection of the sample (start and end points). The user can zoom in to the waveform to make finer edits. The area has 4 knobs which control zoom, viewx, start and end. Switching between current pads shows different start and end points per pad but the values of the zoom and viewx controls are global settings. When a pad is selected and its region is outside the view, the view scrolls to it, keeping the current zoom.
+Displays the waveform of the loaded sample. A sample can be dragged from the host DAW and dropped into this area to load a sample. It also displays the boundaries of the current pad's selection of the sample (start and end points), with the other pads' regions shown faintly in their pad colors. The user can zoom in to the waveform to make finer edits. The area has 4 knobs which control zoom, viewx, start and end. Switching between current pads shows different start and end points per pad but the values of the zoom and viewx controls are global settings. When a pad is selected and its region is outside the view, the view scrolls to it, keeping the current zoom.
 
 ### Pads
 Displays the 16 pads that can each be assigned a selection of the loaded sample. Each pad can be 
-assigned one of 16 possible colors, or white (blank). Also indicates the selected pad.
+assigned one of 16 possible colors. A pad without a slice is shown dark. Also indicates the selected pad.
 
 ### Selected pad params
 Displays the selected pads params including envelope, pitch, oneshot mode, choke group, etc.
@@ -149,27 +174,12 @@ Displays the selected pads params including envelope, pitch, oneshot mode, choke
 └───────────────────────────────────────────────────────┘
 ```
 
-## Open questions
-
-- **Display feedback in MIDI mode.** In MIDI mode the Maschine displays show values from the template's own CCs, not host parameters. Keeping the knob readouts in sync with the selected pad may also need the plugin to send CC values over MIDI out. To be tested on hardware.
-- **Encoder behaviour.** Which relative encoding Maschine sends in MIDI mode, and whether tying the start and end step size to the zoom level is enough for coarse and fine adjustment when a sample is minutes long.
-- **Knob pages.** Zoom, view, start and end use four of Maschine's eight knobs, and the pad settings need more than the remaining four, so the template will need pages.
-- **Showing all regions.** The waveform currently highlights the selected pad's region and marks where the other pads start. Overlapping chops may need every region drawn in its pad colour.
-- **Blank pads and colours.** Whether a pad has a slice and what colour it is are stored separately, so "white" need not mean "blank".
-- **Pad colours on the hardware.** What colour feedback Maschine accepts in MIDI mode is untested; colours are only planned for the plugin window.
-- **Dragging from the DAW.** This only works where the host hands over a real file. Browser panes usually do; timeline clips often do not.
-- **Very long samples.** Start and end are stored as a fraction of the sample length, which is exact to one sample up to about five minutes at 48 kHz and off by a few samples beyond that.
-- **Snap to zero crossings** when moving slice points.
-- **Pad banks**, for more than 16 slices of one sample.
-- **Time-stretching**, so pitch and length can be changed independently.
-- **Embedding audio.** A saved project stores the path to the sample and reports it as missing if the file has moved. Embedding the audio in the project could be added as an option.
-
 ## Building
 
 Requires CMake 3.25 or newer and a C++23 compiler. Ninja is recommended.
 
 ```bash
-git clone --recurse-submodules <repo-url>
+git clone --recurse-submodules https://github.com/ajaremko/MelonTester.git
 cd MelonTester
 
 cmake -B Builds -G Ninja -DCMAKE_BUILD_TYPE=Debug

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## About This Project
 
-**MelonTester** is a 16-pad chop sampler plugin by Alfred Young, built to be driven from a Maschine controller in MIDI mode: one long sample, each pad plays a region of it, and each pad's region is editable from MIDI encoders. `README.md` is the design document, including what is and isn't implemented yet. It takes MIDI in and has no audio input bus (`IS_SYNTH TRUE`, `NEEDS_MIDI_INPUT TRUE`).
+**MelonTester** is a 16-pad chop sampler plugin by Alfred Young, built to be driven from a Maschine MK2 through a MIDI script in FL Studio: one long sample, each pad plays a region of it, and each pad's region is editable from the controller's knobs. `README.md` is the design document, including what is and isn't implemented yet. It takes MIDI in and has no audio input bus (`IS_SYNTH TRUE`, `NEEDS_MIDI_INPUT TRUE`).
 
 This project is derived from the [Pamplejuce](https://github.com/sudara/pamplejuce) template — a JUCE audio plugin template using CMake, C++23, and modern CI/CD. It builds cross-platform (macOS, Windows, Linux) with support for multiple plugin formats (VST3, AU, AUv3, CLAP, Standalone).
 
@@ -70,11 +70,12 @@ State is shared between the two threads; only the message thread changes it.
 - **Parameters** (`juce::AudioProcessorValueTreeState`): global settings, 12 settings for each of the 16 pads, and a 12-parameter "selected pad" mirror set (`sel_*`). `SelectedPadMirror` keeps the mirror set equal to the selected pad's own parameters in both directions. The UI and the controller bind to the mirror set. Parameter IDs are saved in user projects, so never rename them. Pad indices are zero-based in code and 1-based in IDs and the `selectedPad` parameter.
 - **Sample**: `SampleData` is immutable once loaded. `SampleStore` swaps a new one in for the audio thread at a block boundary and frees the old one on the message thread. The file path is saved in the APVTS state tree (`samplePath`).
 - **Audio thread** (`processBlock`): `MidiRouter` translates each MIDI message. Pad hits go straight to `SamplerEngine` so they are sample-accurate. Everything that changes state (selecting a pad, encoder turns, buttons) is pushed onto a `CommandQueue` as an `EditCommand`.
-- **Message thread**: `EditController` drains that queue on a 60 Hz timer, applies the edits to parameters, and syncs the mirror. The editor calls the same `EditController` functions directly, so MIDI and mouse edits share one path. Add new edit behaviour there, not in UI components or the audio thread.
+- **Message thread**: `EditController` drains that queue on a 60 Hz timer, applies the edits to parameters, and syncs the mirror. Pad clicks, loading and slicing in the editor call the same `EditController` functions. The on-screen knobs, the MK2 script and host automation write parameters directly instead, and today only `SelectedPadMirror` reacts to those writes (see "One place that reacts to parameter writes" in `TODO.md`). Add new edit behaviour to `EditController`, not to UI components or the audio thread.
 - In tests no timer runs, so call `getController().processPending()` after `processBlock` to apply queued edits.
 - The MIDI map is JSON: the default is embedded from `assets/midi/default_map.json`, and a user file at `<user app data>/MelonTester/midi_map.json` overrides it. It is read once when the plugin is created.
+- **Controller contract**: the Maschine MK2 script (a separate project) reads and writes host parameters, which it finds by their position in the parameter list. Only pad notes (36–51) reach the plugin as MIDI; the script sends no CCs and the plugin sends no MIDI out. So never reorder, insert or remove parameters: add new ones after the last pad parameter. `pad-colors.md` specifies the colour parameters the script reads. The CC side of the MIDI map is for other controllers.
 
-Stubs to fill in: `SamplerEngine` ignores pitch, attack/release, play mode, reverse, loop, choke group and polyphony mode; `Slicer::detectTransients` returns nothing; pad colour is not drawn.
+Stubbed features and known rough edges are tracked in `TODO.md`, and `PLAN.md` puts every item into a phase: work through them in that order. When a stubbed feature is finished, tick it in `TODO.md` and update the Status section of `README.md`.
 
 ## Build Architecture
 
