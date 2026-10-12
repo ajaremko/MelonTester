@@ -45,3 +45,26 @@ TEST_CASE ("Parameter layout", "[params]")
         CHECK (selectedPadParamID (PadParam::end) == "sel_end");
     }
 }
+
+TEST_CASE ("Switch parameters only hold on or off", "[params]")
+{
+    PluginProcessor plugin;
+    auto& state = plugin.getValueTreeState();
+
+    for (const auto param : { PadParam::reverse, PadParam::loop, PadParam::assigned })
+    {
+        for (const auto& id : { padParamID (0, param), selectedPadParamID (param) })
+        {
+            auto* parameter = state.getParameter (id);
+            REQUIRE (parameter != nullptr);
+
+            // A host can write any value from 0 to 1, but a saved project only records on or off,
+            // so an in-between value could never be restored
+            parameter->setValueNotifyingHost (0.38f);
+            CHECK (juce::exactlyEqual (parameter->getValue(), 0.0f));
+
+            parameter->setValueNotifyingHost (0.7f);
+            CHECK (juce::exactlyEqual (parameter->getValue(), 1.0f));
+        }
+    }
+}

@@ -153,6 +153,7 @@ What the Maschine MK2 script for FL Studio needs from the plugin. The script alr
   - Why: writing Zoom, View, Start and End from the script already works, through `SelectedPadMirror`. What is missing is rules for those writes. The rules live in `EditController::apply` and the functions it calls, such as the limit in `adjustRegionEdge`, and only edits that arrive as MIDI CCs get there. The MK2 script, the on-screen knobs (`ParamKnob` in [source/ui/ParamControls.h](source/ui/ParamControls.h)) and host automation write parameters directly. `SelectedPadMirror::sync` is the only code that reacts, and it keeps a record of the selected pad's values alone.
   - Where: `EditController::processPending`, with `SelectedPadMirror::sync` becoming the first step of the pass. Comparing every parameter value 60 times a second costs next to nothing.
   - Test: in `tests/EditControllerTests.cpp`, the existing mirror tests still pass, and restoring a saved state changes nothing beyond what was saved.
+  - Done already: after `setStateInformation`, `SelectedPadMirror::adoptCurrentValues` takes the restored values as they are. That came with the pluginval fix. The rest of the pass is still to do.
   - Needed by: Keep start before end on every path; Nudge parameters for coarse and fine start and end.
 
 - [ ] **Nudge parameters for coarse and fine start and end**
@@ -167,8 +168,8 @@ What the Maschine MK2 script for FL Studio needs from the plugin. The script alr
 - [ ] **Keep plugin-made parameter changes apart from user edits**
   - Done when: changes the plugin makes by itself are not recorded as automation in FL Studio and don't count as the last-tweaked control, while the MK2 script still sees the new values. These changes are the Selected parameters updating when a pad is hit, a nudge parameter returning to centre, a start or end being limited, and the view scrolling to the selected pad.
   - Where: `setParameterNormalised` in [source/params/ParamUtils.h](source/params/ParamUtils.h) is used for every change and reports each one to the host as a user gesture. Hitting a pad changes all 12 Selected parameters that way.
-  - Find out first: what FL Studio does with these today. Hit pads with automation recording on and see whether the Selected parameters get recorded. If they don't, tick this item with no work.
-  - If work is needed: JUCE's `updateHostDisplay` tells a host that parameter values changed without reporting an edit. Whether FL Studio and the script pick the new values up that way needs trying.
+  - Found (2026-10-11): FL Studio does record them. Hitting pads with automation recording on recorded the Selected parameters, so this needs doing.
+  - Where to start: JUCE's `updateHostDisplay` tells a host that parameter values changed without reporting an edit. Whether FL Studio and the script pick the new values up that way needs trying.
   - Watch for: automation recorded on a Selected parameter plays back onto whichever pad is selected at that moment. Hiding them from automation may not be possible, since pad-colors.md describes the script as reading a plugin's automatable parameters.
 
 ## Rough edges
@@ -229,10 +230,12 @@ Problems in the parts that already work, with the ones most likely to bite first
 - [ ] **Check the CI run on all three platforms**
   - Done when: the latest run of `.github/workflows/build_and_test.yml` passes on Linux, macOS and Windows with no compiler warnings.
   - Why: the code has only been built with MSVC, and Clang on macOS and Linux reports warnings MSVC doesn't. The workflow's IPP and code-signing steps were also commented out during setup, which is untested until a run passes.
+  - Status (2026-10-11): on the scaffold commit, the build and unit tests pass on all three platforms with no warnings from our files, and pluginval passes on Linux. Pluginval failed on macOS and Windows in its state restoration test. That is fixed locally: pluginval 1.0.4 at strictness 10 passes five runs in a row on Windows. Tick this once a pushed run is green on all three.
 
-- [ ] **Listen to it, then try it in FL Studio**
+- [x] **Listen to it, then try it in FL Studio**
   - Done when: the Standalone build has been run with a real sample and the pads played while listening. Then, in FL Studio: a saved project reopens with its sample and chops, a file dragged from FL's browser onto the waveform loads, and FL lists the parameters in the order given under Controller contract. Anything wrong gets added to this file.
   - Why: playback has only been checked by tests that compare rendered samples, and FL Studio is the host the plugin is meant for.
+  - Result (2026-10-11): done in FL Studio with the Debug build. A file dragged from FL's browser loads, the pads play the right slices in order, selection follows the pad that was hit, the on-screen Start and End knobs move the region, a saved project reopens with its sample and chops, and the parameters are in the expected order. The Standalone was not run separately; the listening was done in FL.
 
 - [ ] **Check the MK2 script against the plugin**
   - Done when: with the Maschine MK2 and its FL Studio script, the 16 pads play and select the right pads (notes 36–51, pad 1 lowest); the eight knobs move Zoom, View, Start, End, Pitch, Gain, Attack and Release; the script's modifier layer reaches Choke group and Sensitivity; and the display shows the Selected parameters' text. Once Pad colours is done, the pads light as [pad-colors.md](pad-colors.md) describes.

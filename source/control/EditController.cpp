@@ -31,6 +31,9 @@ void EditController::timerCallback()
 
 void EditController::processPending()
 {
+    if (stateRestored.exchange (false))
+        mirror.adoptCurrentValues();
+
     incoming.drain ([this] (const EditCommand& command) { apply (command); });
     mirror.sync();
     sampleStore.releaseRetired();

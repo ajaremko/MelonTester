@@ -197,6 +197,7 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
     const auto samplePath = state.getProperty (samplePathProperty).toString();
 
     apvts.replaceState (state);
+    controller.stateWasRestored();
 
     // The pad regions come back with the parameters, so the sample is loaded without re-slicing
     if (! juce::File::isAbsolutePath (samplePath))

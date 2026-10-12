@@ -33,8 +33,8 @@ Goal: confirm that what exists works, and make the controller contract safe to b
 
 | # | Item | Size | Notes |
 |---|---|---|---|
-| 1 | Check the CI run on all three platforms | S–M | Depends on how many Clang warnings turn up |
-| 2 | Listen to it, then try it in FL Studio | You | |
+| 1 | Check the CI run on all three platforms | S–M | No warnings. Pluginval failed on macOS and Windows; fixed locally, waiting on a green run after the push |
+| 2 | Listen to it, then try it in FL Studio | You | Done 2026-10-11; everything behaved as expected |
 | 3 | Check the MK2 script against the plugin | You | |
 | 4 | Tests use the machine's MIDI map | S | |
 | 5 | Pin the parameter positions in a test | S | Must be in before Phase 1 adds parameters |
@@ -45,7 +45,7 @@ Items 1–3 are checks and don't block 4–6.
 While doing items 2 and 3, answer two questions that Phase 1 depends on:
 
 - **How much does the script add to a parameter per knob click?** The nudge parameters need it as their step unit.
-- **Does FL Studio record the plugin's own parameter changes as automation?** Hit pads with automation recording on and see whether the Selected parameters get recorded. This decides whether item 5 of Phase 1 is any work at all.
+- **Does FL Studio record the plugin's own parameter changes as automation?** Answered 2026-10-11: yes. Hitting pads with automation recording on recorded the Selected parameters, so item 5 of Phase 1 is needed.
 
 Ends when: CI passes on all three platforms with no warnings, anything found by ear or on the hardware is written into `TODO.md`, and both questions are answered.
 
@@ -59,7 +59,7 @@ Goal: from the MK2, a pad's edges move in coarse and fine steps, can't cross, sn
 | 2 | Colour parameter matches pad-colors.md | S | |
 | 3 | One place that reacts to parameter writes | M | Groundwork for items 4 and 6 |
 | 4 | Keep start before end on every path | S | |
-| 5 | Keep plugin-made parameter changes apart from user edits | ? | Skip if Phase 0 showed FL Studio doesn't record them. Otherwise the size is unknown until it is tried |
+| 5 | Keep plugin-made parameter changes apart from user edits | ? | Needed: Phase 0 showed FL Studio records them. The size is unknown until it is tried |
 | 6 | Nudge parameters for coarse and fine start and end | M | Needs the step amount from Phase 0. You: try fast turning on the hardware |
 | 7 | Snap to zero crossings | M | Includes reworking the global panel's layout to fit the switch |
 | 8 | Show start and end as time | M | |

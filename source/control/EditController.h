@@ -23,6 +23,10 @@ public:
 
     void apply (const EditCommand& command);
 
+    // Call after a saved state has been restored, from any thread. The restored values are then
+    // kept as they are, not treated as edits to react to.
+    void stateWasRestored() noexcept { stateRestored = true; }
+
     void selectPad (int padIndex);
     int getSelectedPad() const { return params.getSelectedPad(); }
 
@@ -51,6 +55,7 @@ private:
     SampleStore& sampleStore;
     CommandQueue& incoming;
     SelectedPadMirror mirror;
+    std::atomic<bool> stateRestored { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EditController)
 };

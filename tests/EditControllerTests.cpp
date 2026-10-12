@@ -183,3 +183,36 @@ TEST_CASE ("Saving and restoring", "[state]")
 
     sampleFile.deleteFile();
 }
+
+TEST_CASE ("A restored state stays as the host set it", "[state]")
+{
+    // What pluginval's state restoration test does: write every parameter, save, restore, and expect
+    // every value to be what was written. The plugin's timer runs in between, so the selected-pad
+    // mirror gets the chance to change things.
+    for (const auto seed : { 1, 2, 3, 4, 5 })
+    {
+        PluginProcessor plugin;
+        juce::Random random (seed);
+
+        for (auto* parameter : plugin.getParameters())
+            parameter->setValueNotifyingHost (random.nextFloat());
+
+        std::vector<float> expected;
+
+        for (auto* parameter : plugin.getParameters())
+            expected.push_back (parameter->getValue());
+
+        juce::MemoryBlock saved;
+        plugin.getStateInformation (saved);
+
+        plugin.getController().processPending();
+        plugin.setStateInformation (saved.getData(), static_cast<int> (saved.getSize()));
+        plugin.getController().processPending();
+
+        for (int i = 0; i < plugin.getParameters().size(); ++i)
+        {
+            INFO ("seed " << seed << ", " << plugin.getParameters()[i]->getName (64).toStdString());
+            CHECK_THAT (plugin.getParameters()[i]->getValue(), WithinAbs (expected[static_cast<size_t> (i)], 1.0e-3));
+        }
+    }
+}

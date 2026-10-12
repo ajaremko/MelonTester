@@ -41,6 +41,8 @@ ctest --test-dir Builds --verbose --output-on-failure
 ./Builds/Benchmarks.exe
 ```
 
+The build copies the VST3 into `C:\Program Files\Common Files\VST3` as its last step. That step fails with "Permission denied" while FL Studio has the plugin loaded; the plugin in `Builds/` is still up to date when it does.
+
 Builds default to **Debug** (faster builds, better debugging). If the user is making music with the plugin and reports audio dropouts or high CPU, build in Release instead: configure with `-DCMAKE_BUILD_TYPE=Release` and build with `--config Release`.
 
 ## Project Structure
@@ -67,7 +69,7 @@ Builds default to **Debug** (faster builds, better debugging). If the user is ma
 
 State is shared between the two threads; only the message thread changes it.
 
-- **Parameters** (`juce::AudioProcessorValueTreeState`): global settings, 12 settings for each of the 16 pads, and a 12-parameter "selected pad" mirror set (`sel_*`). `SelectedPadMirror` keeps the mirror set equal to the selected pad's own parameters in both directions. The UI and the controller bind to the mirror set. Parameter IDs are saved in user projects, so never rename them. Pad indices are zero-based in code and 1-based in IDs and the `selectedPad` parameter.
+- **Parameters** (`juce::AudioProcessorValueTreeState`): global settings, 12 settings for each of the 16 pads, and a 12-parameter "selected pad" mirror set (`sel_*`). `SelectedPadMirror` keeps the mirror set equal to the selected pad's own parameters in both directions. The UI and the controller bind to the mirror set. Parameter IDs are saved in user projects, so never rename them. Pad indices are zero-based in code and 1-based in IDs and the `selectedPad` parameter. On/off settings are two-choice parameters made by `makeSwitch` in `ParameterLayout.cpp`, not `AudioParameterBool`: that type keeps any in-between value a host writes, which a saved state can't restore, and it failed pluginval.
 - **Sample**: `SampleData` is immutable once loaded. `SampleStore` swaps a new one in for the audio thread at a block boundary and frees the old one on the message thread. The file path is saved in the APVTS state tree (`samplePath`).
 - **Audio thread** (`processBlock`): `MidiRouter` translates each MIDI message. Pad hits go straight to `SamplerEngine` so they are sample-accurate. Everything that changes state (selecting a pad, encoder turns, buttons) is pushed onto a `CommandQueue` as an `EditCommand`.
 - **Message thread**: `EditController` drains that queue on a 60 Hz timer, applies the edits to parameters, and syncs the mirror. Pad clicks, loading and slicing in the editor call the same `EditController` functions. The on-screen knobs, the MK2 script and host automation write parameters directly instead, and today only `SelectedPadMirror` reacts to those writes (see "One place that reacts to parameter writes" in `TODO.md`). Add new edit behaviour to `EditController`, not to UI components or the audio thread.
@@ -114,7 +116,7 @@ Version is read from the `VERSION` file in project root.
 
 ## CI Status
 
-`.github/workflows/build_and_test.yml` runs the full matrix (Linux, macOS, Windows) on every push and pull request, in Release mode, including pluginval.
+`.github/workflows/build_and_test.yml` runs the full matrix (Linux, macOS, Windows) on every push and pull request, in Release mode, including pluginval at strictness 10. To run the same check locally, download pluginval 1.0.4 and run `pluginval --strictness-level 10 --validate Builds/MelonTester_artefacts/Debug/VST3/MelonTester.vst3`. Run it several times: the plugin's 60 Hz timer makes some failures timing-dependent.
 
 Currently disabled, as commented-out blocks in the workflow:
 - **Intel IPP**: the install steps and the `IPP_DIR` env var. Re-enable together with `include(PamplejuceIPP)` in `CMakeLists.txt`.

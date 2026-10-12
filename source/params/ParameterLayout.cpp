@@ -22,6 +22,13 @@ namespace
         return juce::AudioParameterFloatAttributes().withStringFromValueFunction ([numDecimals] (float value, int) { return juce::String (value, numDecimals); });
     }
 
+    // An on/off setting. Not an AudioParameterBool, which keeps whatever in-between value a host
+    // writes to it: a saved project only records on or off, so that value could never be restored.
+    Param makeSwitch (const juce::String& id, const juce::String& name)
+    {
+        return std::make_unique<juce::AudioParameterChoice> (versioned (id), name, juce::StringArray { "Off", "On" }, 0);
+    }
+
     juce::StringArray chokeGroupNames()
     {
         juce::StringArray names { "Off" };
@@ -52,15 +59,15 @@ namespace
             case PadParam::playMode:
                 return std::make_unique<juce::AudioParameterChoice> (versioned (id), name, juce::StringArray { "One-shot", "Gate" }, 0);
             case PadParam::reverse:
-                return std::make_unique<juce::AudioParameterBool> (versioned (id), name, false);
+                return makeSwitch (id, name);
             case PadParam::loop:
-                return std::make_unique<juce::AudioParameterBool> (versioned (id), name, false);
+                return makeSwitch (id, name);
             case PadParam::chokeGroup:
                 return std::make_unique<juce::AudioParameterChoice> (versioned (id), name, chokeGroupNames(), 0);
             case PadParam::colour:
                 return std::make_unique<juce::AudioParameterInt> (versioned (id), name, 0, kNumPadColours, 0);
             case PadParam::assigned:
-                return std::make_unique<juce::AudioParameterBool> (versioned (id), name, false);
+                return makeSwitch (id, name);
         }
 
         jassertfalse;

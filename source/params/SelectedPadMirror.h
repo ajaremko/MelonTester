@@ -18,6 +18,10 @@ public:
 
     void sync();
 
+    // Takes the parameters as they are now as the starting point, without changing any of them.
+    // For after a saved state is restored: the host expects to get back exactly what it set.
+    void adoptCurrentValues();
+
 private:
     int getSelectedPad() const;
 
@@ -26,5 +30,6 @@ private:
     std::atomic<float>* selectedPad = nullptr;
 
     int lastSelected = -1;
-    std::array<float, kNumPadParams> lastValues {};
+    std::array<float, kNumPadParams> lastMirrorValues {};
+    std::array<float, kNumPadParams> lastPadValues {};
 };

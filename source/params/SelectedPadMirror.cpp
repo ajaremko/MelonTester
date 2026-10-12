@@ -18,6 +18,18 @@ int SelectedPadMirror::getSelectedPad() const
     return juce::jlimit (0, kNumPads - 1, juce::roundToInt (selectedPad->load()) - 1);
 }
 
+void SelectedPadMirror::adoptCurrentValues()
+{
+    lastSelected = getSelectedPad();
+    const auto& pad = padParams[static_cast<size_t> (lastSelected)];
+
+    for (size_t i = 0; i < mirrorParams.size(); ++i)
+    {
+        lastMirrorValues[i] = mirrorParams[i]->getValue();
+        lastPadValues[i] = pad[i]->getValue();
+    }
+}
+
 void SelectedPadMirror::sync()
 {
     const auto selected = getSelectedPad();
@@ -26,29 +38,21 @@ void SelectedPadMirror::sync()
     if (selected != lastSelected)
     {
         for (size_t i = 0; i < mirrorParams.size(); ++i)
-        {
             setParameterNormalised (*mirrorParams[i], pad[i]->getValue());
-            lastValues[i] = mirrorParams[i]->getValue();
-        }
 
-        lastSelected = selected;
+        adoptCurrentValues();
         return;
     }
 
     for (size_t i = 0; i < mirrorParams.size(); ++i)
     {
-        const auto mirrorValue = mirrorParams[i]->getValue();
-        const auto padValue = pad[i]->getValue();
+        // Each side is compared with its own last value, so a restored state where the two differ is left alone
+        if (! juce::exactlyEqual (mirrorParams[i]->getValue(), lastMirrorValues[i]))
+            setParameterNormalised (*pad[i], mirrorParams[i]->getValue());
+        else if (! juce::exactlyEqual (pad[i]->getValue(), lastPadValues[i]))
+            setParameterNormalised (*mirrorParams[i], pad[i]->getValue());
 
-        if (! juce::exactlyEqual (mirrorValue, lastValues[i]))
-        {
-            setParameterNormalised (*pad[i], mirrorValue);
-            lastValues[i] = mirrorValue;
-        }
-        else if (! juce::exactlyEqual (padValue, lastValues[i]))
-        {
-            setParameterNormalised (*mirrorParams[i], padValue);
-            lastValues[i] = padValue;
-        }
+        lastMirrorValues[i] = mirrorParams[i]->getValue();
+        lastPadValues[i] = pad[i]->getValue();
     }
 }
